@@ -1,0 +1,328 @@
+# Ledger Import API Endpoints
+
+Source of truth for the HTTP contract. Request and response shapes are
+typed in `shared/types.ts` and imported by both the engine and the UI,
+so the contract cannot drift between them.
+
+## Resource model
+
+An **import** is the first-class resource. Transactions and rejections
+are sub-collections scoped to a specific import:
+
+  /api/imports                            list of imports
+  /api/imports/:id                        one import (poll / metadata)
+  /api/imports/:id/summary                row counts + issue breakdown
+  /api/imports/:id/transactions           imported rows
+  /api/imports/:id/rejected               rejected rows
+  /api/imports/:id/rejected.csv           rejected rows as CSV download
+
+The "status" of a row is implicit in which table it lives in — there
+is no flag column on `transactions`. Aggregating across imports is an
+explicit anti-goal, which is why every read endpoint is namespaced by
+`:id`.
+
+
+## Response envelope
+
+All 2xx JSON responses match one of the typed shapes in
+`shared/types.ts`. All non-2xx responses use a single error envelope:
+
+  {
+    "error": {
+      "code": "<typed error code>",
+      "message": "<human-readable reason>",
+      "details": <optional structured context>
+    }
+  }
+
+Error codes are a closed enum (`ApiErrorCode` in `shared/types.ts`):
+
+  VALIDATION_FAILED        400   Bad request shape, invalid filter,
+                                 bad CSV headers, missing file field
+  NOT_FOUND                404   Unknown import_id
+  UNSUPPORTED_MEDIA_TYPE   415   Non-CSV upload without a .csv extension
+  PAYLOAD_TOO_LARGE        413   File exceeds the 200 MB multer clamp
+  INTERNAL_ERROR           500   Fallback for unexpected multer /
+                                 processing failures
+
+Frontend clients branch on `error.code`, never on `error.message`, so
+copy changes don't break UX behavior.
+
+
+## POST /api/imports
+
+Upload a CSV file. Processing runs asynchronously after the response
+is sent — the client polls GET /api/imports/:id to see when it's
+done.
+
+Request:
+  Content-Type: multipart/form-data
+  Body:         single `file` field with a CSV payload
+
+Accepted MIME types: `text/csv`, `application/vnd.ms-excel`,
+`application/octet-stream`, or anything whose filename ends in
+`.csv` (belt-and-braces since browsers are inconsistent).
+
+Response 202 Accepted (new upload):
+  Headers:
+    Location: /api/imports/:id
+  Body (ImportResource):
+    {
+      "id": "imp_abc123def456",
+      "filename": "january-2026-gl.csv",
+      "status": "processing",
+      "created_at": "2026-04-09T15:42:00.000Z",
+      "completed_at": null,
+      "error_message": null,
+      "row_counts": { "total": 0, "imported": 0, "rejected": 0 }
+    }
+
+Response 200 OK (idempotent replay — same file already uploaded):
+  Headers:
+    Idempotent-Replayed: true
+  Body: same ImportResource shape, populated with the current state
+        of the existing import (typically already "completed").
+
+Idempotency is keyed on the SHA-256 of the file content. If a
+previous upload is in `status: "failed"`, the failed row is deleted
+and the new upload is treated as fresh.
+
+Error responses:
+  400 VALIDATION_FAILED        missing file field, bad CSV headers,
+                               empty file
+  413 PAYLOAD_TOO_LARGE        file exceeds 200 MB clamp
+  415 UNSUPPORTED_MEDIA_TYPE   mimetype isn't CSV and filename doesn't
+                               end in .csv
+  500 INTERNAL_ERROR           unexpected multer failure
+
+
+## GET /api/imports
+
+Cursor-paginated list of import batches, newest first. Because
+`imports.id` is a text UUID, pagination keys on SQLite's `rowid`
+instead — it's monotonic and strictly insertion-ordered, and the
+`_cursor` column is stripped from the response body before send.
+
+Query parameters:
+  ?cursor=<int>   opaque cursor from the previous page's next_cursor
+  ?limit=<int>    1..500, default 100
+
+Response 200 OK (ImportListResponse):
+  {
+    "items": [ <ImportResource>, ... ],
+    "next_cursor": 1284,
+    "has_more": true
+  }
+
+
+## GET /api/imports/:id
+
+Get one import's metadata. This is the poll endpoint the UI hits
+after POST /api/imports returns 202.
+
+Response 200 OK: ImportResource (same shape as the POST response).
+Response 404 NOT_FOUND: unknown import_id.
+
+Status values:
+  "processing"   worker is still running
+  "completed"    done, all rows placed in transactions or rejected_rows
+  "failed"       fatal error during processing; error_message is set
+
+
+## GET /api/imports/:id/summary
+
+Rich summary used to drive the review dashboard. Breaks down
+rejections by category and specific error code.
+
+Response 200 OK (SummaryResponse):
+  {
+    "import_id": "imp_abc123def456",
+    "filename": "january-2026-gl.csv",
+    "status": "completed",
+    "row_counts": {
+      "total": 50000,
+      "imported": 49850,
+      "rejected": 150
+    },
+    "issue_counts": {
+      "by_category": {
+        "structural": 12,
+        "referential": 80,
+        "business": 58
+      },
+      "by_code": [
+        {
+          "code": "ERR_UNKNOWN_ACCOUNT",
+          "category": "referential",
+          "count": 80,
+          "message": "Account code not found in chart of accounts"
+        },
+        {
+          "code": "ERR_UNBALANCED_ENTRY",
+          "category": "business",
+          "count": 45,
+          "message": "Journal entry debits do not equal credits"
+        }
+      ]
+    },
+    "links": {
+      "transactions": "/api/imports/imp_abc123def456/transactions",
+      "rejected":     "/api/imports/imp_abc123def456/rejected",
+      "rejected_csv": "/api/imports/imp_abc123def456/rejected.csv"
+    }
+  }
+
+Notes:
+  - The summary response uses `import_id` (not `id`). Other endpoints
+    return an `ImportResource` which uses `id`. The difference is
+    intentional — the summary is a composite resource, and the
+    embedded `import_id` makes it self-describing when cached.
+  - by_code is sorted by count descending, so the UI can render the
+    most common errors first without client-side sorting.
+  - The links block is HATEOAS-style — the server tells the client
+    where to navigate next so URL construction doesn't get duplicated
+    client-side.
+
+Response 404 NOT_FOUND: unknown import_id.
+
+
+## GET /api/imports/:id/transactions
+
+Cursor-paginated list of IMPORTED rows — rows that passed validation
+and now live in the ledger.
+
+Query parameters:
+  ?reference=JE-1001      filter to all legs of one journal entry
+  ?account_code=5100      filter to one GL account
+  ?cursor=<int>           numeric cursor (primary key of last row seen)
+  ?limit=<int>            1..500, default 100
+
+Response 200 OK (PaginatedResponse<Transaction>):
+  {
+    "items": [
+      {
+        "id": 1234,
+        "import_id": "imp_abc123def456",
+        "row_number": 42,
+        "reference": "JE-1001",
+        "txn_date": "2026-01-15",
+        "account_code": "5100",
+        "debit_cents": 25000,
+        "credit_cents": 0,
+        "description": "Office supplies",
+        "memo": "Staples order"
+      }
+    ],
+    "next_cursor": 1284,
+    "has_more": true
+  }
+
+Every row in this response is imported by definition — there is no
+status field. All amounts are integer cents.
+
+Response 404 NOT_FOUND: unknown import_id.
+
+
+## GET /api/imports/:id/rejected
+
+Cursor-paginated list of REJECTED rows — rows that failed validation
+and were dropped. Each row carries its original raw CSV text and an
+array of issues.
+
+Query parameters:
+  ?category=structural|referential|business   filter by category
+  ?code=ERR_UNKNOWN_ACCOUNT                   filter by exact error code
+  ?cursor=<int>                                numeric cursor
+  ?limit=<int>                                 1..500, default 100
+
+Invalid `?category` values return 400 VALIDATION_FAILED with the
+allowed values echoed in the error message.
+
+Response 200 OK (PaginatedResponse<RejectedRow>):
+  {
+    "items": [
+      {
+        "id": 99,
+        "import_id": "imp_abc123def456",
+        "row_number": 42,
+        "raw_row": "2026-01-15,JE-1001,5100,250.00,,Office supplies,Staples",
+        "issues": [
+          {
+            "category": "business",
+            "code": "ERR_UNBALANCED_ENTRY",
+            "field": null,
+            "message": "Journal entry JE-1001 is unbalanced: debits $250.00, credits $200.00, difference $50.00",
+            "context": {
+              "reference": "JE-1001",
+              "total_debits_cents": 25000,
+              "total_credits_cents": 20000,
+              "difference_cents": 5000
+            }
+          }
+        ]
+      }
+    ],
+    "next_cursor": 1284,
+    "has_more": true
+  }
+
+Notes:
+  - raw_row is always included so the CPA can see exactly what was in
+    the CSV, not our parsed interpretation.
+  - issues is always an array; one row can carry multiple problems.
+  - Group-level issues (ERR_UNBALANCED_ENTRY, ERR_SINGLE_LEG_ENTRY)
+    are denormalized onto every leg of the affected reference.
+
+Response 404 NOT_FOUND: unknown import_id.
+
+
+## GET /api/imports/:id/rejected.csv
+
+Download rejected rows as a CSV file for offline fixing and re-upload.
+
+Response 200 OK:
+  Content-Type: text/csv
+  Content-Disposition: attachment; filename="rejected-<id>.csv"
+
+Columns (in order):
+  row_number       original CSV line number
+  raw_row          original CSV line text
+  error_codes      semicolon-joined list of error codes
+  error_messages   semicolon-joined list of human messages
+
+Response 404 NOT_FOUND: unknown import_id.
+
+
+## Validation categories
+
+structural    Parse/type errors. The row could not be parsed or is
+              structurally invalid. Examples: bad date format,
+              non-numeric amount, both debit and credit populated,
+              neither populated, empty required field.
+
+referential   Unknown lookups. The row parsed fine but references
+              data that does not exist. Current example: account_code
+              not in the seeded chart of accounts.
+
+business      Domain rules. The row parsed fine and references valid
+              data but violates an accounting rule. Examples: negative
+              amount, unbalanced journal entry (debits != credits for
+              a reference), single-leg journal entry (only one leg
+              for a reference).
+
+
+## Error code catalog
+
+Nine stable, machine-readable codes. The UI imports from
+`shared/error-codes.ts`, never hardcoding these strings, so rename
+refactors propagate cleanly.
+
+  ERR_INVALID_DATE               structural    Date could not be parsed
+  ERR_INVALID_AMOUNT             structural    Amount could not be parsed as a number
+  ERR_BOTH_DEBIT_AND_CREDIT      structural    Both debit and credit are populated on the same row
+  ERR_NEITHER_DEBIT_NOR_CREDIT   structural    Neither debit nor credit is populated
+  ERR_MISSING_REQUIRED_FIELD     structural    A required field is missing
+  ERR_UNKNOWN_ACCOUNT            referential   Account code not found in chart of accounts
+  ERR_NEGATIVE_AMOUNT            business      Amount must be positive
+  ERR_UNBALANCED_ENTRY           business      Journal entry debits do not equal credits
+  ERR_SINGLE_LEG_ENTRY           business      Journal entry must have at least two legs

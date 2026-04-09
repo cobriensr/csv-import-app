@@ -1,0 +1,9 @@
+CSV format
+
+One row per leg (authentic GL export format)
+
+date,reference,account_code,debit,credit,description,memo
+2026-01-15,JE-1001,5100,250.00,,Office supplies,Staples order
+2026-01-15,JE-1001,1010,,250.00,Office supplies,Staples order
+2026-01-15,JE-1002,5200,1200.00,,Rent,January rent
+2026-01-15,JE-1002,1010,,1200.00,Rent,January rent

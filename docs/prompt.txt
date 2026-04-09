@@ -1,0 +1,6 @@
+Ledger Import and Review Tool (CPA)
+Build a small app that accepts a CSV upload of transaction data and imports it into a backend service, normalizing fields like date, amount, description, and account code. The backend should expose endpoints to list imported transactions, flag rows with validation issues, and return summary counts by status. Add a minimal frontend that lets the user upload a file, view the imported rows in a table, and see which rows failed validation with simple error messages.
+
+Create my own CSV file, to show off architecture skills, be sure to contemplate from small to large. Can use an in-memory database or an actual database. Extra points given for designs that scale well.
+
+Focus on backend, give explanations as to why REST API's were built that way, choices, etc. Frontend is not the focus, but can be simple. Expect hard questions about the API design and make sure that it works and is resilient

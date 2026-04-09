@@ -1,0 +1,114 @@
+# Async internal flow — current implementation
+
+## Request lifecycle — POST /api/imports
+
+  ├─ multer parses multipart; file.buffer holds the bytes in memory
+  │   (multer.memoryStorage, no tmp files)
+  ├─ fileFilter rejects non-CSV mimetypes via sentinel error
+  │   → 415 UNSUPPORTED_MEDIA_TYPE
+  ├─ 200 MB file-size clamp
+  │   → 413 PAYLOAD_TOO_LARGE
+  ├─ validateCsvHeaders(buffer)            sync header sanity check
+  │   → 400 VALIDATION_FAILED on bad / missing columns or empty file
+  ├─ computeFileHash(buffer)               SHA-256 idempotency key
+  ├─ createImportRow(db, filename, hash):
+  │     ├─ existing row with same hash, status != 'failed':
+  │     │     → return { importId, isDuplicate: true }
+  │     ├─ existing row, status == 'failed':
+  │     │     → DELETE it, fall through to insert a new one
+  │     └─ else INSERT into imports (status='processing')
+  │           → return { importId, isDuplicate: false }
+  ├─ if isDuplicate:
+  │     ├─ setHeader Idempotent-Replayed: true
+  │     └─ 200 OK with the current ImportResource
+  └─ else:
+        ├─ setHeader Location: /api/imports/:id
+        ├─ 202 Accepted with ImportResource (status='processing')
+        └─ setImmediate(() => processImport(db, importId, buffer))
+
+
+## Background processing — processImport(db, id, buffer)
+
+Runs on the same Node event loop as the HTTP handler, one tick
+later (`setImmediate` was chosen over a real worker pool because
+the single-shot demo doesn't need it — see the README scaling
+story for the path to a real worker).
+
+  ├─ csv-parse/sync parses the whole buffer into an array of row
+  │  objects (no streaming — the buffer is already in memory, and
+  │  sync keeps the engine code linear and easy to reason about)
+  ├─ re-validate required headers (defense in depth; already checked
+  │  in validateCsvHeaders, but this is the processing entry point
+  │  that runImport also uses)
+  ├─ load known account codes from db into a Set:
+  │     SELECT code FROM accounts
+  │   (the seeded chart of accounts, used as the referential context)
+  ├─ row-level validation pass — pure JS, no DB writes yet:
+  │     for each record:
+  │       ├─ normalize date / amount / strings (normalizers.ts)
+  │       ├─ row-level validation (validators.ts):
+  │       │    ├─ structural  (field parse errors, debit-and-credit)
+  │       │    ├─ referential (unknown account_code)
+  │       │    └─ business    (negative amount)
+  │       ├─ good → push to validRows[]
+  │       └─ bad  → push to rejectedRows[] with issue list
+  ├─ group-level validation — validateGroups(validRows):
+  │     ├─ groups rows by `reference`
+  │     ├─ sums debits and credits per reference (integer cents reduce)
+  │     ├─ groups where sum(debits) != sum(credits):
+  │     │     → ERR_UNBALANCED_ENTRY on every leg
+  │     └─ groups with fewer than 2 legs:
+  │           → ERR_SINGLE_LEG_ENTRY on the lone leg
+  ├─ rows whose group failed are moved validRows → rejectedRows with
+  │  the group issue denormalized onto every leg of the affected ref
+  ├─ atomic write — single db.transaction():
+  │     ├─ UPDATE imports
+  │     │     SET status='completed',
+  │     │         total_rows=?, imported_rows=?, rejected_rows=?,
+  │     │         completed_at=?
+  │     ├─ INSERT transactions      for every surviving validRow
+  │     ├─ INSERT rejected_rows     for every rejectedRow
+  │     └─ INSERT rejection_issues  for every issue on every rejected
+  │                                  row (including denormalized ones)
+  └─ on any exception (parse, SQL, validation crash):
+        UPDATE imports
+          SET status='failed', error_message=?, completed_at=?
+
+
+## Client polling — UI side
+
+The frontend calls GET /api/imports/:id every POLL_INTERVAL_MS
+(400 ms in the current code) until `status` transitions out of
+`processing`. While polling, the UI displays a "Processing…"
+indicator. Once `status === 'completed'`, the UI fetches /summary,
+/transactions, and /rejected in parallel (`Promise.all`) to populate
+the review cards.
+
+There is no dedicated progress endpoint — the row-count fields on
+the imports row are updated exactly once, at the end of the atomic
+write. Intermediate progress would require a second transaction
+per batch, which defeats the "single atomic write" design.
+
+
+## Notable non-choices
+
+- **No tmp files.** multer.memoryStorage() means the CSV lives in a
+  Node Buffer for the lifetime of the request and processing. Trades
+  RAM for operational simplicity. The 200 MB clamp keeps the blast
+  radius bounded.
+
+- **No staging_rows table.** Earlier drafts sketched a pattern where
+  rows landed in a staging table and group validation ran in SQL.
+  The current code does all splitting in memory before the single
+  atomic write, so there is no halfway state in the database.
+
+- **No SQL aggregation for group totals.** validateGroups is a pure
+  JavaScript reduce over already-normalized integer cents. SQL would
+  be faster in the ideal streaming case, but for a single-shot
+  in-memory pass a JS reduce is the simplest correct thing and
+  composes with the in-memory validRows/rejectedRows split.
+
+- **No separate worker process.** setImmediate schedules processing
+  on the next tick of the same event loop. Fine for demo file sizes,
+  not for a production fleet — see the "Scaling story" section in
+  the README for the move to a worker thread or external queue.

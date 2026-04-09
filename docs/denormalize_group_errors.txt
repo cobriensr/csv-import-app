@@ -1,0 +1,13 @@
+Why denormalize group errors
+
+When a journal entry JE-1001 is unbalanced, every leg of that entry gets flagged with the same ERR_UNBALANCED_ENTRY issue. That's a 3x or 4x write duplication per bad entry. Four reasons this is the right call:
+
+Query simplicity on the read path. The "show me all rejected rows" query is the hot path — it drives the review UI. Denormalized, it's one indexed scan over rejected_rows joined to rejection_issues. Normalized into a separate journal_entry_issues table, you'd need a UNION or a more complex join to surface group-level errors alongside row-level ones. Slower, harder to paginate correctly, and messier code.
+
+The UI's mental model matches the denormalized shape. When a CPA filters "show failed rows" they expect to see every row that failed, each with its own error label, not a mix of "rows that failed individually" plus "rows that failed because their group failed." The storage shape matching the display shape eliminates a translation layer.
+
+Write-cost is negligible. A bad JE is typically 2–4 legs. Writing the same error row 4 times vs 1 time is a few hundred extra bytes per bad entry. SQLite inserts in a transaction are ~50k/sec either way.
+
+No update anomalies. Denormalization's classic downside is update cost — if the message needs to change, you update N rows instead of 1. But rejection issues are write-once. A row that was rejected stays rejected; its error message is a historical record, not mutable state. The update anomaly never materializes.
+
+The only scenario where I'd normalize is if rejected rows were updatable and the error messages were shared across many rows dynamically. That's not this problem.

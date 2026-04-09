@@ -1,0 +1,102 @@
+# Data model — current SQLite schema
+
+Source of truth: `api/db/schema.sql`. Applied via `CREATE TABLE IF
+NOT EXISTS` on every init so re-running is idempotent.
+
+-- Chart of accounts (seeded from data/chart-of-accounts.json at init)
+CREATE TABLE IF NOT EXISTS accounts (
+  code TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  type TEXT NOT NULL CHECK (type IN ('asset','liability','equity','revenue','expense')),
+  normal_balance TEXT NOT NULL CHECK (normal_balance IN ('debit','credit'))
+);
+
+-- Import batches: first-class resource with a lifecycle.
+-- file_hash is nullable (NOT `NOT NULL`) so legacy test fixtures
+-- that insert rows directly — without going through the engine —
+-- still work. The UNIQUE index below still enforces uniqueness for
+-- the production path, because SQLite treats multiple NULLs as
+-- distinct.
+CREATE TABLE IF NOT EXISTS imports (
+  id TEXT PRIMARY KEY,                -- imp_<12-char uuid slice>
+  filename TEXT NOT NULL,
+  file_hash TEXT,                     -- SHA-256 for idempotency
+  status TEXT NOT NULL CHECK (status IN ('processing','completed','failed')),
+  total_rows INTEGER NOT NULL DEFAULT 0,
+  imported_rows INTEGER NOT NULL DEFAULT 0,
+  rejected_rows INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL,
+  completed_at TEXT,
+  error_message TEXT                  -- only set when status='failed'
+);
+
+CREATE INDEX IF NOT EXISTS idx_imports_created ON imports(created_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_imports_file_hash ON imports(file_hash);
+
+-- The ledger: only rows that passed all validation
+CREATE TABLE IF NOT EXISTS transactions (
+  id INTEGER PRIMARY KEY,
+  import_id TEXT NOT NULL REFERENCES imports(id) ON DELETE CASCADE,
+  row_number INTEGER NOT NULL,        -- source CSV line, preserved for traceability
+  reference TEXT NOT NULL,
+  txn_date TEXT NOT NULL,             -- ISO YYYY-MM-DD after normalization
+  account_code TEXT NOT NULL REFERENCES accounts(code),
+  debit_cents INTEGER NOT NULL,       -- 0 if this is a credit leg
+  credit_cents INTEGER NOT NULL,      -- 0 if this is a debit leg
+  description TEXT,
+  memo TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_txns_import     ON transactions(import_id, id);
+CREATE INDEX IF NOT EXISTS idx_txns_reference  ON transactions(import_id, reference);
+CREATE INDEX IF NOT EXISTS idx_txns_account    ON transactions(import_id, account_code);
+
+-- Audit sidecar: rejected rows, stored for API + CSV export
+CREATE TABLE IF NOT EXISTS rejected_rows (
+  id INTEGER PRIMARY KEY,
+  import_id TEXT NOT NULL REFERENCES imports(id) ON DELETE CASCADE,
+  row_number INTEGER NOT NULL,
+  raw_row TEXT NOT NULL               -- faithful copy of the original CSV line
+);
+
+CREATE INDEX IF NOT EXISTS idx_rejected_import ON rejected_rows(import_id, id);
+
+-- Issues attached to rejected rows. One row can carry multiple
+-- issues; group-level issues (unbalanced, single-leg) are
+-- denormalized onto every leg of the affected reference.
+CREATE TABLE IF NOT EXISTS rejection_issues (
+  id INTEGER PRIMARY KEY,
+  rejected_row_id INTEGER NOT NULL REFERENCES rejected_rows(id) ON DELETE CASCADE,
+  category TEXT NOT NULL CHECK (category IN ('structural','referential','business')),
+  code TEXT NOT NULL,                 -- stable machine code (see error_catalog.txt)
+  field TEXT,                         -- column name, or NULL for row-level / group-level
+  message TEXT NOT NULL,              -- human-readable, composed at write time
+  context_json TEXT                   -- structured context (JSON) for rich rendering
+);
+
+CREATE INDEX IF NOT EXISTS idx_issues_row  ON rejection_issues(rejected_row_id);
+CREATE INDEX IF NOT EXISTS idx_issues_code ON rejection_issues(code);
+
+
+## Notes
+
+- **ON DELETE CASCADE** on every `import_id` foreign key means
+  deleting an import also removes its transactions, rejected_rows,
+  and rejection_issues in one statement. Useful for retrying a
+  failed import without stray rows.
+
+- **CHECK constraints** on `type`, `normal_balance`, `status`, and
+  `category` mean SQLite enforces the allowed values at write time.
+  The engine's TypeScript enums can't be bypassed by a rogue direct
+  insert.
+
+- **No `staging_rows` table.** The engine does all row splitting
+  in memory, then writes the final valid/rejected split in one
+  atomic `db.transaction()`. There is no halfway state in the
+  database.
+
+- **`transactions` has three composite indexes** keyed on
+  `import_id` — one for cursor-paginated iteration, one for
+  filtering by reference, one for filtering by account code. These
+  match the three read access patterns served by
+  `GET /api/imports/:id/transactions` and its query parameters.

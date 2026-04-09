@@ -1,0 +1,7 @@
+Errors exist at four different granularities, and the design needs to handle all of them:
+
+Granularity	Example	Where it attaches
+Field-level	amount column isn't numeric	Row with field="amount"
+Row-level	Unknown account code referenced	Row with field=null
+Cross-row (group)	JE-1001 debits ≠ credits	Attached to every leg in the group
+Batch-level	CSV header is missing	Attached to the Import itself

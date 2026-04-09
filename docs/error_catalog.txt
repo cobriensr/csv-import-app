@@ -1,0 +1,37 @@
+error-code catalog — current state
+
+This file mirrors `shared/error-codes.ts`, which is the source of
+truth imported by both the engine and the UI. Rename refactors should
+propagate cleanly from that file — do not hand-edit this list without
+updating the TypeScript module.
+
+// Structural (parse/type errors)
+ERR_INVALID_DATE              // Date could not be parsed
+ERR_INVALID_AMOUNT            // Amount could not be parsed as a number
+ERR_BOTH_DEBIT_AND_CREDIT     // Both debit and credit are populated on the same row
+ERR_NEITHER_DEBIT_NOR_CREDIT  // Neither debit nor credit is populated
+ERR_MISSING_REQUIRED_FIELD    // A required field is missing
+
+// Referential (unknown lookup)
+ERR_UNKNOWN_ACCOUNT           // Account code not found in chart of accounts
+
+// Business (domain rules)
+ERR_NEGATIVE_AMOUNT           // Amount must be positive
+ERR_UNBALANCED_ENTRY          // Journal entry debits do not equal credits
+ERR_SINGLE_LEG_ENTRY          // Journal entry must have at least two legs
+
+
+// Intentionally omitted from this build
+// (see the README "Trade-offs I explicitly made" section):
+//
+//   ERR_MALFORMED_ROW        csv-parse is configured with
+//                            relax_column_count, so wrong-width rows
+//                            surface as ERR_MISSING_REQUIRED_FIELD or
+//                            similar instead of a dedicated code.
+//   ERR_FUTURE_DATE          Domain rule not requested by the prompt.
+//   ERR_PERIOD_CLOSED        Would require a period-state system and
+//                            an admin flow for opening/closing
+//                            periods.
+//   WARN_POSSIBLE_DUPLICATE  No warning tier in a drop-on-fail model
+//   WARN_LARGE_AMOUNT        — every failure is blocking, so a
+//                            "warning" has nothing to do.

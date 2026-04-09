@@ -1,0 +1,56 @@
+# REST API surface (short form)
+
+Quick one-screen reference. For the full spec with request/response
+shapes, headers, filters, and error envelopes, see
+docs/api_endpoints.txt.
+
+## Endpoints
+
+  POST   /api/imports                       upload CSV, returns 202 Accepted + ImportResource
+  GET    /api/imports                       list all import batches, newest first (cursor-paginated)
+  GET    /api/imports/:id                   poll one import's status
+  GET    /api/imports/:id/summary           row counts + issue breakdown + HATEOAS links
+  GET    /api/imports/:id/transactions      cursor-paginated imported rows
+  GET    /api/imports/:id/rejected          cursor-paginated rejected rows with issues
+  GET    /api/imports/:id/rejected.csv      download rejected rows as CSV
+
+## Design notes (defensible in interview)
+
+- `import` is the first-class resource. Transactions and rejections
+  are sub-collections scoped to a specific import, so each upload is
+  a bounded, auditable unit.
+
+- POST returns `202 Accepted`, not `201 Created`. Processing runs
+  asynchronously (via `setImmediate`) and the client polls
+  `GET /api/imports/:id` until `status` flips to `completed` or
+  `failed`. The 202 response includes a `Location:
+  /api/imports/:id` header pointing at the poll URL.
+
+- Idempotency is keyed on the SHA-256 hash of the file content.
+  Re-uploading the same bytes returns the existing `import_id` with
+  an `Idempotent-Replayed: true` response header, and does not
+  double-insert.
+
+- Cursor pagination, not offset. The imports list pages by SQLite
+  `rowid` (text UUIDs can't serve as a monotonic cursor). The
+  transactions and rejected lists page by numeric primary key. All
+  three use the fetch-`limit+1` trick so `has_more` is derived
+  without a separate `COUNT(*)` query.
+
+- The summary endpoint returns a HATEOAS `links` block so clients
+  don't hand-construct URLs for the sub-resources.
+
+- Every non-2xx response uses the typed error envelope
+  `{ error: { code, message, details? } }` from `shared/types.ts`.
+  Clients branch on `error.code`, never on `error.message`.
+
+- Query filters on the read endpoints are first-class, named
+  parameters: `?reference=`, `?account_code=` on transactions;
+  `?category=`, `?code=` on rejected. These are the two access
+  patterns a CPA actually uses, so they get dedicated params
+  instead of a generic `?q=` search.
+
+- `rejected.csv` is a separate endpoint rather than content
+  negotiation on `/rejected`. Browsers don't easily send custom
+  `Accept` headers on downloads, and a dedicated path lets the
+  server set `Content-Disposition: attachment` unambiguously.
