@@ -1,0 +1,753 @@
+/* =============================================================================
+ * Ledger Import — Design System
+ *
+ * Self-contained CSS for a small, professional accounting-style UI.
+ * Variables are the source of truth for color, spacing, and typography so
+ * the whole look can be retuned by changing the :root block.
+ * ============================================================================= */
+
+:root {
+  color-scheme: light;
+
+  /* ---- Color palette -------------------------------------------------- */
+  /* Neutral surfaces */
+  --color-bg: #f5f7fa;
+  --color-surface: #ffffff;
+  --color-surface-subtle: #f8fafc;
+  --color-border: #e2e8f0;
+  --color-border-strong: #cbd5e1;
+
+  /* Text */
+  --color-text: #0f172a;
+  --color-text-muted: #64748b;
+  --color-text-subtle: #94a3b8;
+
+  /* Brand: deep teal — reads as "professional financial software" without
+     looking like a consumer app */
+  --color-primary: #0f766e;
+  --color-primary-hover: #115e59;
+  --color-primary-light: #ccfbf1;
+
+  /* Semantic colors */
+  --color-success: #059669;
+  --color-success-light: #d1fae5;
+  --color-success-dark: #047857;
+
+  --color-danger: #dc2626;
+  --color-danger-light: #fee2e2;
+  --color-danger-dark: #991b1b;
+
+  --color-info: #2563eb;
+  --color-info-light: #dbeafe;
+
+  /* Validation category colors */
+  --color-cat-structural: #2563eb;
+  --color-cat-structural-bg: #dbeafe;
+  --color-cat-structural-text: #1e3a8a;
+
+  --color-cat-referential: #7c3aed;
+  --color-cat-referential-bg: #ede9fe;
+  --color-cat-referential-text: #5b21b6;
+
+  --color-cat-business: #ea580c;
+  --color-cat-business-bg: #ffedd5;
+  --color-cat-business-text: #9a3412;
+
+  /* ---- Shadows, radii, motion ----------------------------------------- */
+  --shadow-xs: 0 1px 2px 0 rgba(15, 23, 42, 0.05);
+  --shadow-sm:
+    0 1px 3px 0 rgba(15, 23, 42, 0.08), 0 1px 2px 0 rgba(15, 23, 42, 0.04);
+  --shadow:
+    0 4px 6px -1px rgba(15, 23, 42, 0.08), 0 2px 4px -2px rgba(15, 23, 42, 0.04);
+
+  --radius-sm: 4px;
+  --radius: 8px;
+  --radius-lg: 12px;
+
+  --duration: 120ms;
+  --ease: cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* ---- Typography ----------------------------------------------------- */
+  --font-sans:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', Roboto,
+    'Helvetica Neue', Arial, sans-serif;
+  --font-mono:
+    ui-monospace, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  min-height: 100%;
+  font-family: var(--font-sans);
+  background: var(--color-bg);
+  color: var(--color-text);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+h1,
+h2,
+h3,
+h4,
+p {
+  margin: 0;
+}
+
+button,
+input {
+  font: inherit;
+}
+
+/* =============================================================================
+ * Layout
+ * ============================================================================= */
+
+.app-root {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 2.5rem 1.5rem 4rem;
+}
+
+.app-header {
+  margin-bottom: 2rem;
+  padding-bottom: 1.5rem;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.app-title {
+  font-size: 1.75rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--color-text);
+}
+
+.app-title::before {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 1.4rem;
+  background: var(--color-primary);
+  border-radius: 2px;
+  margin-right: 0.75rem;
+  vertical-align: -3px;
+}
+
+.app-subtitle {
+  margin-top: 0.5rem;
+  font-size: 0.95rem;
+  color: var(--color-text-muted);
+  max-width: 64ch;
+}
+
+/* =============================================================================
+ * Card
+ * ============================================================================= */
+
+.card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-xs);
+  padding: 1.5rem;
+  margin-top: 1.5rem;
+}
+
+.card-title {
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--color-text);
+  margin-bottom: 1rem;
+  letter-spacing: -0.01em;
+}
+
+/* =============================================================================
+ * Upload section
+ * ============================================================================= */
+
+.upload-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.file-input {
+  font-family: inherit;
+  font-size: 0.9rem;
+  padding: 0.45rem 0.5rem;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+  cursor: pointer;
+  transition: border-color var(--duration) var(--ease);
+}
+
+.file-input:hover {
+  border-color: var(--color-primary);
+}
+
+.file-input::file-selector-button {
+  font-family: inherit;
+  font-size: 0.85rem;
+  font-weight: 500;
+  padding: 0.35rem 0.8rem;
+  margin-right: 0.75rem;
+  background: var(--color-primary-light);
+  color: var(--color-primary);
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background-color var(--duration) var(--ease);
+}
+
+.file-input::file-selector-button:hover {
+  background: #99f6e4;
+}
+
+/* =============================================================================
+ * Buttons
+ * ============================================================================= */
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-family: inherit;
+  font-size: 0.9rem;
+  font-weight: 500;
+  padding: 0.55rem 1.25rem;
+  border-radius: var(--radius);
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition:
+    background-color var(--duration) var(--ease),
+    border-color var(--duration) var(--ease),
+    box-shadow var(--duration) var(--ease),
+    transform var(--duration) var(--ease);
+  user-select: none;
+}
+
+.button:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+.button-primary {
+  background: var(--color-primary);
+  color: white;
+  box-shadow: var(--shadow-xs);
+}
+
+.button-primary:hover:not(:disabled) {
+  background: var(--color-primary-hover);
+  box-shadow: var(--shadow-sm);
+}
+
+.button-primary:active:not(:disabled) {
+  transform: translateY(1px);
+  box-shadow: none;
+}
+
+.button-primary:disabled {
+  background: var(--color-text-subtle);
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.button-secondary {
+  background: var(--color-surface);
+  color: var(--color-text);
+  border-color: var(--color-border-strong);
+}
+
+.button-secondary:hover:not(:disabled) {
+  background: var(--color-surface-subtle);
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.button-secondary:disabled {
+  color: var(--color-text-subtle);
+  cursor: not-allowed;
+}
+
+/* =============================================================================
+ * Status + error banners
+ * ============================================================================= */
+
+.status-message {
+  margin-top: 1rem;
+  padding: 0.75rem 1rem;
+  background: var(--color-info-light);
+  border: 1px solid var(--color-info);
+  border-left: 4px solid var(--color-info);
+  border-radius: var(--radius);
+  color: #1e3a8a;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  font-size: 0.9rem;
+}
+
+.error-banner {
+  margin-top: 1rem;
+  padding: 0.75rem 1rem;
+  background: var(--color-danger-light);
+  border: 1px solid var(--color-danger);
+  border-left: 4px solid var(--color-danger);
+  border-radius: var(--radius);
+  color: var(--color-danger-dark);
+  font-size: 0.9rem;
+}
+
+/* CSS-only spinner used in the status message */
+.spinner {
+  flex-shrink: 0;
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(37, 99, 235, 0.25);
+  border-top-color: var(--color-info);
+  border-radius: 50%;
+  animation: spin 700ms linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* =============================================================================
+ * Summary stat cards
+ * ============================================================================= */
+
+.file-display {
+  margin-bottom: 1rem;
+  font-size: 0.9rem;
+  color: var(--color-text);
+}
+
+.file-display strong {
+  color: var(--color-text-muted);
+  font-weight: 500;
+  margin-right: 0.35rem;
+}
+
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.stat {
+  padding: 1rem 1.25rem;
+  background: var(--color-surface-subtle);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  border-left: 4px solid var(--color-border-strong);
+}
+
+.stat-label {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 0.3rem;
+}
+
+.stat-value {
+  font-size: 1.85rem;
+  font-weight: 700;
+  color: var(--color-text);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  letter-spacing: -0.02em;
+}
+
+.stat-total {
+  border-left-color: var(--color-info);
+}
+
+.stat-imported {
+  border-left-color: var(--color-success);
+}
+.stat-imported .stat-value {
+  color: var(--color-success-dark);
+}
+
+.stat-rejected {
+  border-left-color: var(--color-danger);
+}
+.stat-rejected .stat-value {
+  color: var(--color-danger-dark);
+}
+
+/* Category breakdown line (kept as plain text to satisfy existing tests,
+   but each category gets its own span so we can color it) */
+.category-line {
+  margin-top: 0.5rem;
+  font-size: 0.85rem;
+  color: var(--color-text);
+}
+
+.cat-label-structural {
+  color: var(--color-cat-structural-text);
+  font-weight: 500;
+}
+.cat-label-referential {
+  color: var(--color-cat-referential-text);
+  font-weight: 500;
+}
+.cat-label-business {
+  color: var(--color-cat-business-text);
+  font-weight: 500;
+}
+
+/* Error code drill-down */
+.error-breakdown {
+  margin-top: 1rem;
+  padding-top: 0.75rem;
+  border-top: 1px dashed var(--color-border);
+  font-size: 0.9rem;
+}
+
+.error-breakdown > summary {
+  cursor: pointer;
+  font-weight: 500;
+  color: var(--color-text-muted);
+  padding: 0.25rem 0;
+  list-style: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.error-breakdown > summary::-webkit-details-marker {
+  display: none;
+}
+
+.error-breakdown > summary::before {
+  content: '▸';
+  display: inline-block;
+  transition: transform var(--duration) var(--ease);
+  color: var(--color-text-subtle);
+}
+
+.error-breakdown[open] > summary::before {
+  transform: rotate(90deg);
+}
+
+.error-breakdown > summary:hover {
+  color: var(--color-text);
+}
+
+.error-breakdown ul {
+  margin: 0.5rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.error-breakdown li {
+  padding: 0.4rem 0;
+  border-bottom: 1px solid var(--color-border);
+  font-size: 0.85rem;
+  color: var(--color-text);
+}
+
+.error-breakdown li:last-child {
+  border-bottom: none;
+}
+
+.error-breakdown code {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  background: var(--color-surface-subtle);
+  border: 1px solid var(--color-border);
+  padding: 1px 6px;
+  border-radius: 3px;
+  color: var(--color-text);
+  margin-right: 0.35rem;
+}
+
+/* =============================================================================
+ * Section heading with count
+ * ============================================================================= */
+
+.section-heading {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--color-text);
+  margin-bottom: 1rem;
+  letter-spacing: -0.01em;
+}
+
+.section-count {
+  font-size: 0.8rem;
+  font-weight: 400;
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* =============================================================================
+ * Tables
+ * ============================================================================= */
+
+.table-wrap {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--color-surface);
+}
+
+.table-scroll {
+  max-height: 55vh;
+  overflow-y: auto;
+}
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88rem;
+}
+
+.data-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--color-surface-subtle);
+  text-align: left;
+  font-weight: 600;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-muted);
+  padding: 0.65rem 0.9rem;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.data-table thead th.num-col {
+  text-align: right;
+}
+
+.data-table tbody tr {
+  border-bottom: 1px solid var(--color-border);
+  transition: background-color 80ms var(--ease);
+}
+
+.data-table tbody tr:nth-child(even) {
+  background: #fafbfc;
+}
+
+.data-table tbody tr:hover {
+  background: #f1f5f9;
+}
+
+.data-table tbody tr:last-child {
+  border-bottom: none;
+}
+
+.data-table td {
+  padding: 0.55rem 0.9rem;
+  vertical-align: top;
+  color: var(--color-text);
+}
+
+/* Numeric columns: right-aligned, tabular, monospace-ish */
+.num-col {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+}
+
+.num-col.zero {
+  color: var(--color-text-subtle);
+}
+
+.row-num {
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-muted);
+  font-size: 0.82rem;
+}
+
+.account-code {
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+  color: var(--color-text);
+}
+
+.mono-col {
+  font-family: var(--font-mono);
+  font-size: 0.77rem;
+  color: var(--color-text-muted);
+  max-width: 380px;
+  word-break: break-all;
+  white-space: pre-wrap;
+  background: var(--color-surface-subtle);
+  border-radius: 3px;
+  padding: 0.35rem 0.5rem !important;
+}
+
+.txn-date {
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text);
+  font-size: 0.85rem;
+}
+
+/* =============================================================================
+ * Rejected rows: error badges and issue list
+ * ============================================================================= */
+
+.issue-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.issue-list li {
+  margin: 0.35rem 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.issue-list li:first-child {
+  margin-top: 0;
+}
+
+.issue-list li:last-child {
+  margin-bottom: 0;
+}
+
+.issue-code {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--color-danger-light);
+  color: var(--color-danger-dark);
+  white-space: nowrap;
+  letter-spacing: 0.01em;
+  flex-shrink: 0;
+  line-height: 1.4;
+}
+
+.issue-code.cat-structural {
+  background: var(--color-cat-structural-bg);
+  color: var(--color-cat-structural-text);
+}
+
+.issue-code.cat-referential {
+  background: var(--color-cat-referential-bg);
+  color: var(--color-cat-referential-text);
+}
+
+.issue-code.cat-business {
+  background: var(--color-cat-business-bg);
+  color: var(--color-cat-business-text);
+}
+
+.issue-message {
+  font-size: 0.83rem;
+  line-height: 1.4;
+  color: var(--color-text);
+  flex: 1;
+  min-width: 200px;
+}
+
+/* =============================================================================
+ * Load more + empty states + download link
+ * ============================================================================= */
+
+.load-more-bar {
+  padding: 0.75rem 1rem;
+  background: var(--color-surface-subtle);
+  border-top: 1px solid var(--color-border);
+  display: flex;
+  justify-content: center;
+}
+
+.empty-state {
+  padding: 2rem 1rem;
+  text-align: center;
+  color: var(--color-text-muted);
+  font-size: 0.9rem;
+  background: var(--color-surface-subtle);
+  border: 1px dashed var(--color-border-strong);
+  border-radius: var(--radius);
+}
+
+.empty-state.success {
+  background: var(--color-success-light);
+  border: 1px solid var(--color-success);
+  color: var(--color-success-dark);
+}
+
+.download-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 1rem;
+  color: var(--color-primary);
+  text-decoration: none;
+  font-weight: 500;
+  font-size: 0.88rem;
+  padding: 0.35rem 0;
+  border-bottom: 1px solid transparent;
+  transition:
+    color var(--duration) var(--ease),
+    border-color var(--duration) var(--ease);
+}
+
+.download-link:hover {
+  color: var(--color-primary-hover);
+  border-bottom-color: var(--color-primary-hover);
+}
+
+.download-link::before {
+  content: '⬇';
+  font-size: 0.9rem;
+}
+
+/* =============================================================================
+ * Small-screen refinements
+ * ============================================================================= */
+
+@media (max-width: 640px) {
+  .app-root {
+    padding: 1.25rem 0.75rem 3rem;
+  }
+
+  .app-title {
+    font-size: 1.4rem;
+  }
+
+  .stat-value {
+    font-size: 1.5rem;
+  }
+
+  .data-table {
+    font-size: 0.82rem;
+  }
+
+  .data-table td,
+  .data-table thead th {
+    padding: 0.5rem 0.6rem;
+  }
+}
