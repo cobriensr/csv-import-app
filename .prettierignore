@@ -1,0 +1,7 @@
+node_modules
+dist
+coverage
+html
+.vite
+.claude
+package-lock.json

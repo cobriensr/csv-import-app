@@ -1,0 +1,191 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Cancel in-progress runs for the same branch / PR when a new commit arrives.
+# Saves runner minutes and keeps status checks pointing at the latest code.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Least-privilege defaults. paths-filter needs pull-requests:read to diff PRs.
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # 1. Detect which parts of the repo changed.
+  #    Outputs drive `if:` guards on downstream jobs so a frontend-only PR
+  #    doesn't run backend tests (and vice versa). Shared code triggers both.
+  # ---------------------------------------------------------------------------
+  changes:
+    name: Detect changes
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+      shared: ${{ steps.filter.outputs.shared }}
+      any_code: ${{ steps.filter.outputs.any_code }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            backend:
+              - 'api/**'
+            frontend:
+              - 'src/**'
+              - 'index.html'
+              - 'vite.config.ts'
+            shared:
+              - 'shared/**'
+              - 'scripts/**'
+              - 'package.json'
+              - 'package-lock.json'
+              - 'tsconfig.json'
+              - 'vitest.config.ts'
+              - 'eslint.config.ts'
+              - '.prettierrc'
+              - '.prettierignore'
+            any_code:
+              - 'api/**'
+              - 'src/**'
+              - 'shared/**'
+              - 'scripts/**'
+              - 'index.html'
+              - 'vite.config.ts'
+              - 'vitest.config.ts'
+              - 'tsconfig.json'
+              - 'eslint.config.ts'
+              - 'package.json'
+              - 'package-lock.json'
+              - '.prettierrc'
+              - '.prettierignore'
+
+  # ---------------------------------------------------------------------------
+  # 2. Quality gate: typecheck + lint + format check.
+  #    These tools run project-wide, so if ANY code changed we run all three.
+  #    Uses `format:check` (not `format`, which would mutate files in CI).
+  # ---------------------------------------------------------------------------
+  quality:
+    name: Quality gate
+    needs: changes
+    if: needs.changes.outputs.any_code == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Format check
+        run: npm run format:check
+
+  # ---------------------------------------------------------------------------
+  # 3. Backend tests: api/ Express + engine + supertest integration tests.
+  #    Runs when api/ changes OR when shared code changes (types, deps, config).
+  # ---------------------------------------------------------------------------
+  test-backend:
+    name: Backend tests
+    needs: changes
+    if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.shared == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run backend test project
+        run: npx vitest run --project api
+
+  # ---------------------------------------------------------------------------
+  # 4. Frontend tests: src/ React component + App tests under happy-dom.
+  #    Runs when src/ changes OR when shared code changes.
+  # ---------------------------------------------------------------------------
+  test-frontend:
+    name: Frontend tests
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true' || needs.changes.outputs.shared == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run frontend test project
+        run: npx vitest run --project src
+
+  # ---------------------------------------------------------------------------
+  # 5. Aggregator job. Branch protection should require ONLY this check,
+  #    so a docs-only PR (where all test jobs are skipped) still passes,
+  #    while any real failure here fails the whole run.
+  #
+  #    Job results are passed via `env:` rather than interpolated directly
+  #    into the shell script, which is the hardened pattern for avoiding
+  #    any form of expression-to-shell injection in `run:` blocks.
+  # ---------------------------------------------------------------------------
+  ci-success:
+    name: CI success
+    needs: [quality, test-backend, test-frontend]
+    if: always()
+    runs-on: ubuntu-latest
+    env:
+      QUALITY_RESULT: ${{ needs.quality.result }}
+      BACKEND_RESULT: ${{ needs.test-backend.result }}
+      FRONTEND_RESULT: ${{ needs.test-frontend.result }}
+    steps:
+      - name: Verify required jobs succeeded or were skipped
+        run: |
+          set -euo pipefail
+          fail=0
+          # A skipped job is acceptable (means nothing in its scope changed).
+          # Only failure/cancelled should break the build.
+          if [[ "$QUALITY_RESULT" == "failure" || "$QUALITY_RESULT" == "cancelled" ]]; then
+            echo "::error::Quality gate failed"
+            fail=1
+          fi
+          if [[ "$BACKEND_RESULT" == "failure" || "$BACKEND_RESULT" == "cancelled" ]]; then
+            echo "::error::Backend tests failed"
+            fail=1
+          fi
+          if [[ "$FRONTEND_RESULT" == "failure" || "$FRONTEND_RESULT" == "cancelled" ]]; then
+            echo "::error::Frontend tests failed"
+            fail=1
+          fi
+          if [[ $fail -eq 1 ]]; then
+            exit 1
+          fi
+          echo "All required jobs passed or were skipped."
