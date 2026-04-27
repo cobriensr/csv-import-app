@@ -1,2 +1,2 @@
-# tax-lot-matching
-A small system that processes crypto asset activity and computes how inventory changes over time.
+# csv-import-app
+A small system that processes csv imports and records GL activity.
